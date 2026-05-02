@@ -1,0 +1,522 @@
+{
+  "role": "planner_architect",
+  "agent_name": "arch-plan",
+  "provider": "codex",
+  "model": "gpt-5",
+  "session_id": "phase-4-round-1",
+  "confidence": 0.86,
+  "summary": "Architecture planning is actionable with no material ambiguity. The implementation should proceed as a monorepo split into backend foundation, persistence/API, provider streaming, frontend shell/client/UI, mocked tests, documentation, and final verification. OpenRouter remains server-side, SQLite/sqlx owns local persistence, streaming uses SSE with no partial assistant persistence on interruption, and all automated tests must mock provider behavior.",
+  "verdict": "PASS",
+  "score": 0.86,
+  "questions": [],
+  "proposals": [
+    {
+      "title": "Backend API and Persistence Spine",
+      "summary": "Build the Rust 2024 Axum backend around explicit config, tracing, CORS, runtime SQLite migrations, structured errors, conversation/message repositories, and health/conversation/message routes before adding provider calls.",
+      "files": [
+        "backend/Cargo.toml",
+        "backend/migrations/",
+        "backend/src/config.rs",
+        "backend/src/db.rs",
+        "backend/src/errors.rs",
+        "backend/src/models.rs",
+        "backend/src/routes/",
+        "backend/src/lib.rs",
+        "backend/src/main.rs",
+        "backend/tests/"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "OpenRouter Proxy Behind a Mockable Provider Boundary",
+      "summary": "Keep all OpenRouter communication in backend provider modules behind a ChatProvider trait, map missing key/rate limit/timeout/invalid payload/interrupted stream to stable application errors, and test provider behavior using mocks only.",
+      "files": [
+        "backend/src/provider/",
+        "backend/src/routes/messages.rs",
+        "backend/tests/provider_failures.rs",
+        "backend/tests/streaming.rs"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "Frontend ChatGPT-Style App Shell",
+      "summary": "Create the Next.js App Router frontend with a responsive sidebar, transcript, composer, markdown rendering, TanStack Query cache orchestration, zod-validated API client, and native streaming fetch for SSE sends.",
+      "files": [
+        "frontend/src/app/",
+        "frontend/src/components/",
+        "frontend/src/lib/api.ts",
+        "frontend/src/lib/schemas.ts",
+        "frontend/src/lib/streaming.ts",
+        "frontend/src/styles/",
+        "frontend/package.json"
+      ],
+      "owner_role": "frontend"
+    },
+    {
+      "title": "Mocked Verification and Documentation",
+      "summary": "Add component tests, Playwright smoke tests with mocked backend and no OpenRouter requests, root README instructions, placeholder-only .env.example, and hygiene checks for secrets and generated artifacts.",
+      "files": [
+        "frontend/src/**/*.test.tsx",
+        "frontend/e2e/",
+        "frontend/playwright.config.ts",
+        "README.md",
+        ".env.example",
+        ".gitignore"
+      ],
+      "owner_role": "qa"
+    }
+  ],
+  "risks": [
+    {
+      "title": "Provider calls leak to browser or tests",
+      "impact": "Secrets or quota could be exposed if frontend code calls OpenRouter directly or tests use live provider endpoints.",
+      "mitigation": "Keep OPENROUTER_API_KEY only in backend config, expose only NEXT_PUBLIC_API_BASE_URL to frontend, mock all provider behavior in backend tests, and assert Playwright makes no OpenRouter request.",
+      "severity": "P1"
+    },
+    {
+      "title": "Streaming persistence creates partial assistant messages",
+      "impact": "Interrupted provider streams could corrupt chat history by storing incomplete assistant responses.",
+      "mitigation": "Persist the user message before streaming, accumulate assistant deltas in memory, persist the assistant message only after provider completion, emit an SSE error on interruption, and test the failure path.",
+      "severity": "P1"
+    },
+    {
+      "title": "SQLite transaction held across provider latency",
+      "impact": "Long provider calls can lock local persistence and create brittle timeout behavior.",
+      "mitigation": "Use short DB operations before and after provider calls, never hold a SQLite transaction while awaiting OpenRouter, and cover the ordering with persistence tests.",
+      "severity": "P2"
+    },
+    {
+      "title": "Frontend and backend contracts drift",
+      "impact": "The UI may fail at runtime if zod schemas do not match backend response and error shapes.",
+      "mitigation": "Implement zod schemas from the backend DTO/error contracts, add malformed-response tests, and keep mocked Playwright fixtures aligned with those schemas.",
+      "severity": "P2"
+    }
+  ],
+  "claims": [
+    {
+      "kind": "decision",
+      "title": "Backend-first API contract",
+      "summary": "Backend routes, DTOs, error shapes, and SSE event semantics should be stabilized before frontend streaming integration depends on them."
+    },
+    {
+      "kind": "decision",
+      "title": "Runtime sqlx queries",
+      "summary": "Use runtime sqlx queries rather than compile-time macros so a prepared database is not required for this generated repository."
+    },
+    {
+      "kind": "constraint",
+      "title": "No live provider in automation",
+      "summary": "Automated backend, frontend, and Playwright tests must mock provider/backend behavior and must not call OpenRouter."
+    },
+    {
+      "kind": "constraint",
+      "title": "Placeholder-only environment example",
+      "summary": ".env.example may document required variables but must not contain real keys or machine-local private configuration."
+    },
+    {
+      "kind": "risk",
+      "title": "Final readiness depends on full verification",
+      "summary": "Completion can only be reported after backend fmt/clippy/tests, frontend lint/tests/build/e2e, secret scan, generated-artifact scan, and CodeDungeon review/finalization evidence pass."
+    }
+  ],
+  "project_rules": {
+    "status": "approved",
+    "digest": "62b79626958677deaa3fd0d932f147920ee8a93f3de3d5f5fa283023aaf20d6b",
+    "read": "yes"
+  },
+  "task_graph": {
+    "version": 1,
+    "tasks": [
+      {
+        "id": "TASK-001",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Scaffold backend runtime",
+        "objective": "Create the Rust 2024 Axum backend crate with config defaults, tracing, CORS, router assembly, and health endpoint.",
+        "context": [
+          "backend/ is the only server-side API surface",
+          "OPENROUTER_MODEL defaults to nvidia/nemotron-3-super-120b-a12b:free",
+          "No OpenRouter call is needed for health"
+        ],
+        "write_scope": [
+          "backend/Cargo.toml",
+          "backend/src/config.rs",
+          "backend/src/errors.rs",
+          "backend/src/lib.rs",
+          "backend/src/main.rs",
+          "backend/src/routes/health.rs",
+          "backend/tests/health.rs"
+        ],
+        "depends_on": [],
+        "wave": 1,
+        "parallel_group": "backend-foundation",
+        "owner_role": "backend",
+        "acceptance_criteria": [
+          "Rust crate uses edition 2024 and builds as a backend service",
+          "GET /health returns service status without requiring OPENROUTER_API_KEY",
+          "Config applies the required default OPENROUTER_MODEL",
+          "CORS origin is configurable and tracing initializes without panics"
+        ],
+        "verification_commands": [
+          "cargo fmt --check --manifest-path backend/Cargo.toml",
+          "cargo test --manifest-path backend/Cargo.toml health config"
+        ],
+        "risk_notes": [
+          "Keep local .env loading runtime-only and do not commit secrets"
+        ]
+      },
+      {
+        "id": "TASK-002",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Add SQLite persistence and conversation routes",
+        "objective": "Implement sqlx SQLite migrations, pool setup, conversation/message models, and DB-backed conversation/message read routes.",
+        "context": [
+          "SQLite is single-user local persistence",
+          "Tables are conversations and messages with UUID text IDs and UTC timestamp text",
+          "Conversation deletion should cascade to messages"
+        ],
+        "write_scope": [
+          "backend/migrations/",
+          "backend/src/db.rs",
+          "backend/src/models.rs",
+          "backend/src/routes/conversations.rs",
+          "backend/src/routes/messages.rs",
+          "backend/tests/persistence.rs"
+        ],
+        "depends_on": [
+          "TASK-001"
+        ],
+        "wave": 2,
+        "parallel_group": "backend-api",
+        "owner_role": "backend",
+        "acceptance_criteria": [
+          "Runtime migrations create usable conversations and messages tables",
+          "Conversation create/list and message list endpoints persist and return expected DTOs",
+          "Malformed IDs return 400 validation_error and missing conversations return 404 conversation_not_found",
+          "JSON errors use the { error: { code, message, details } } shape"
+        ],
+        "verification_commands": [
+          "cargo fmt --check --manifest-path backend/Cargo.toml",
+          "cargo test --manifest-path backend/Cargo.toml persistence validation"
+        ],
+        "risk_notes": [
+          "Use runtime sqlx queries to avoid requiring a prepared database"
+        ]
+      },
+      {
+        "id": "TASK-003",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Implement non-streaming provider proxy",
+        "objective": "Add the ChatProvider trait, OpenRouter non-streaming implementation, mocked provider tests, and POST message endpoint persistence.",
+        "context": [
+          "OpenRouter calls must remain server-side",
+          "Chat send inserts the user message, calls provider outside a DB transaction, then inserts the assistant response after success",
+          "Provider failures need stable status codes and error codes"
+        ],
+        "write_scope": [
+          "backend/src/provider/",
+          "backend/src/routes/messages.rs",
+          "backend/tests/provider_failures.rs",
+          "backend/tests/messages.rs"
+        ],
+        "depends_on": [
+          "TASK-002"
+        ],
+        "wave": 3,
+        "parallel_group": "backend-provider",
+        "owner_role": "backend",
+        "acceptance_criteria": [
+          "Mocked provider success persists exactly one user and one assistant message",
+          "Missing key maps to 503 provider_not_configured",
+          "Rate limit maps to 429 provider_rate_limited",
+          "Timeout maps to 504 provider_timeout",
+          "Invalid provider payload maps to 502 provider_invalid_response",
+          "No automated test requires a real OpenRouter API key"
+        ],
+        "verification_commands": [
+          "cargo fmt --check --manifest-path backend/Cargo.toml",
+          "cargo test --manifest-path backend/Cargo.toml provider messages"
+        ],
+        "risk_notes": [
+          "Do not hold a SQLite transaction while awaiting provider responses"
+        ]
+      },
+      {
+        "id": "TASK-004",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Implement SSE streaming message endpoint",
+        "objective": "Add POST /api/conversations/:conversation_id/messages/stream with native SSE forwarding, assistant accumulation, completion persistence, and interrupted-stream handling.",
+        "context": [
+          "Streaming endpoint forwards model deltas as SSE",
+          "Assistant text is persisted only after provider stream completion",
+          "Interrupted streams emit SSE error and avoid partial assistant persistence"
+        ],
+        "write_scope": [
+          "backend/src/provider/",
+          "backend/src/routes/messages.rs",
+          "backend/tests/streaming.rs"
+        ],
+        "depends_on": [
+          "TASK-003"
+        ],
+        "wave": 4,
+        "parallel_group": "backend-streaming",
+        "owner_role": "backend",
+        "acceptance_criteria": [
+          "Streaming success emits assistant delta events and persists the completed assistant message",
+          "Interrupted stream emits an SSE error event and does not persist partial assistant text",
+          "Malformed stream requests reuse validation_error behavior",
+          "Provider stream tests use mocks rather than OpenRouter quota"
+        ],
+        "verification_commands": [
+          "cargo fmt --check --manifest-path backend/Cargo.toml",
+          "cargo test --manifest-path backend/Cargo.toml streaming"
+        ],
+        "risk_notes": [
+          "Client disconnect behavior must not crash the Axum server"
+        ]
+      },
+      {
+        "id": "TASK-005",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Scaffold frontend app and validated API client",
+        "objective": "Create the Next.js App Router TypeScript Tailwind frontend with TanStack Query provider, zod schemas, backend client, and test harness.",
+        "context": [
+          "Frontend uses only backend APIs",
+          "NEXT_PUBLIC_API_BASE_URL is safe to expose",
+          "API responses must be validated with zod"
+        ],
+        "write_scope": [
+          "frontend/package.json",
+          "frontend/next.config.*",
+          "frontend/tailwind.config.*",
+          "frontend/tsconfig.json",
+          "frontend/src/app/",
+          "frontend/src/lib/api.ts",
+          "frontend/src/lib/schemas.ts",
+          "frontend/src/test/"
+        ],
+        "depends_on": [],
+        "wave": 1,
+        "parallel_group": "frontend-foundation",
+        "owner_role": "frontend",
+        "acceptance_criteria": [
+          "Next.js App Router TypeScript project starts and builds with Tailwind configured",
+          "TanStack Query provider wraps the app",
+          "API client validates conversation, message, and error responses with zod",
+          "Malformed backend responses surface as app errors"
+        ],
+        "verification_commands": [
+          "npm --prefix frontend run lint",
+          "npm --prefix frontend test"
+        ],
+        "risk_notes": [
+          "Keep browser-exposed environment variables limited to NEXT_PUBLIC_API_BASE_URL"
+        ]
+      },
+      {
+        "id": "TASK-006",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Build responsive ChatGPT-style UI",
+        "objective": "Implement the conversation sidebar, transcript, markdown assistant rendering, composer, loading states, error banner, and responsive mobile drawer behavior.",
+        "context": [
+          "UI should present the actual chat application as the first screen",
+          "Assistant markdown uses react-markdown and remark-gfm",
+          "Components must avoid overlap on mobile and desktop"
+        ],
+        "write_scope": [
+          "frontend/src/app/page.tsx",
+          "frontend/src/components/sidebar.tsx",
+          "frontend/src/components/transcript.tsx",
+          "frontend/src/components/composer.tsx",
+          "frontend/src/components/error-banner.tsx",
+          "frontend/src/app/globals.css",
+          "frontend/src/**/*.test.tsx"
+        ],
+        "depends_on": [
+          "TASK-005"
+        ],
+        "wave": 2,
+        "parallel_group": "frontend-ui",
+        "owner_role": "frontend",
+        "acceptance_criteria": [
+          "Sidebar can list, create, select, and reflect active conversations",
+          "Composer blocks empty input and disables while sending",
+          "Transcript renders user and assistant messages with GFM markdown support",
+          "Unsafe raw HTML/script content is not rendered as executable markup",
+          "Mobile drawer behavior is covered by component tests"
+        ],
+        "verification_commands": [
+          "npm --prefix frontend run lint",
+          "npm --prefix frontend test"
+        ],
+        "risk_notes": [
+          "Use stable responsive dimensions so dynamic text and loading states do not shift layout unexpectedly"
+        ]
+      },
+      {
+        "id": "TASK-007",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Connect frontend streaming send flow",
+        "objective": "Implement native fetch SSE consumption for sending chat messages, optimistic/loading UI behavior, TanStack Query invalidation, and visible error recovery.",
+        "context": [
+          "Streaming fetch is native browser fetch, not EventSource, because the send path is POST",
+          "Frontend should consume backend SSE only",
+          "Provider/backend/validation errors must be visible to the user"
+        ],
+        "write_scope": [
+          "frontend/src/lib/streaming.ts",
+          "frontend/src/app/page.tsx",
+          "frontend/src/components/composer.tsx",
+          "frontend/src/components/transcript.tsx",
+          "frontend/src/**/*.test.tsx"
+        ],
+        "depends_on": [
+          "TASK-004",
+          "TASK-006"
+        ],
+        "wave": 5,
+        "parallel_group": "frontend-streaming",
+        "owner_role": "frontend",
+        "acceptance_criteria": [
+          "Sending a message consumes mocked SSE deltas and displays assistant output",
+          "Conversation/message queries invalidate or update after send completion",
+          "Validation/provider/backend errors re-enable composer and surface a useful error state",
+          "Frontend code contains no OpenRouter API endpoint or key usage"
+        ],
+        "verification_commands": [
+          "npm --prefix frontend run lint",
+          "npm --prefix frontend test"
+        ],
+        "risk_notes": [
+          "Align SSE parser expectations with backend event names and payload shape"
+        ]
+      },
+      {
+        "id": "TASK-008",
+        "repo": "gpt-copy-v7",
+        "kind": "test",
+        "title": "Add Playwright mocked smoke coverage",
+        "objective": "Add a Playwright smoke test that mocks backend network calls, sends one message, consumes mocked SSE, displays assistant output, and asserts no OpenRouter request occurs.",
+        "context": [
+          "Playwright should not require the Rust server or a live provider",
+          "Smoke coverage should exercise the user-facing send flow"
+        ],
+        "write_scope": [
+          "frontend/playwright.config.ts",
+          "frontend/e2e/chat-smoke.spec.ts",
+          "frontend/package.json"
+        ],
+        "depends_on": [
+          "TASK-007"
+        ],
+        "wave": 6,
+        "parallel_group": "frontend-e2e",
+        "owner_role": "qa",
+        "acceptance_criteria": [
+          "Playwright test mocks conversations, messages, and streaming send responses",
+          "Smoke flow displays the mocked assistant response after send",
+          "Test fails if the browser requests an OpenRouter URL",
+          "E2E command is exposed as npm --prefix frontend run test:e2e"
+        ],
+        "verification_commands": [
+          "npm --prefix frontend run test:e2e"
+        ],
+        "risk_notes": [
+          "Avoid introducing test reports or browser artifacts into tracked files"
+        ]
+      },
+      {
+        "id": "TASK-009",
+        "repo": "gpt-copy-v7",
+        "kind": "dev",
+        "title": "Add docs and environment hygiene",
+        "objective": "Write README setup/verification instructions, placeholder-only .env.example, and ignore rules for local env files and generated artifacts.",
+        "context": [
+          "Root docs must explain backend and frontend commands",
+          ".env.example must contain placeholders only",
+          "Generated DB/build/test artifacts must remain untracked"
+        ],
+        "write_scope": [
+          "README.md",
+          ".env.example",
+          ".gitignore"
+        ],
+        "depends_on": [
+          "TASK-001",
+          "TASK-005"
+        ],
+        "wave": 2,
+        "parallel_group": "docs-hygiene",
+        "owner_role": "docs",
+        "acceptance_criteria": [
+          "README documents backend, frontend, test, and local environment setup commands",
+          ".env.example uses placeholder values only and documents OPENROUTER_API_KEY, OPENROUTER_MODEL, and NEXT_PUBLIC_API_BASE_URL",
+          ".gitignore excludes .env, generated databases, backend target, frontend .next, node_modules, Playwright reports, and test results"
+        ],
+        "verification_commands": [
+          "git grep -n -E \"sk-or-v1-|OPENROUTER_API_KEY=[^<[:space:]#]+\" -- . ':!.env.example'",
+          "git ls-files backend/target frontend/.next frontend/node_modules frontend/playwright-report frontend/test-results .codedungeon/codedungeon.db"
+        ],
+        "risk_notes": [
+          "Secret scan should return no tracked real key matches"
+        ]
+      },
+      {
+        "id": "TASK-010",
+        "repo": "gpt-copy-v7",
+        "kind": "fix",
+        "title": "Run integrated verification and close gaps",
+        "objective": "Run the full backend, frontend, e2e, secret, and generated-artifact verification suite; fix only issues needed for the planned scope.",
+        "context": [
+          "Final completion requires verification PASS and CodeDungeon review/finalization evidence",
+          "Automated tests must not call OpenRouter",
+          "Do not merge; keep workflow PR-centered"
+        ],
+        "write_scope": [
+          "backend/",
+          "frontend/",
+          "README.md",
+          ".env.example",
+          ".gitignore"
+        ],
+        "depends_on": [
+          "TASK-003",
+          "TASK-004",
+          "TASK-008",
+          "TASK-009"
+        ],
+        "wave": 7,
+        "parallel_group": "final-qa",
+        "owner_role": "qa",
+        "acceptance_criteria": [
+          "Backend fmt, clippy, and tests pass",
+          "Frontend lint, component tests, build, and Playwright smoke pass",
+          "Secret scan finds no tracked OpenRouter key",
+          "Generated-artifact scan finds no tracked build/test/db outputs",
+          "Any fixes remain inside the planned backend/frontend/docs hygiene scope"
+        ],
+        "verification_commands": [
+          "cargo fmt --check --manifest-path backend/Cargo.toml",
+          "cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings",
+          "cargo test --manifest-path backend/Cargo.toml",
+          "npm --prefix frontend run lint",
+          "npm --prefix frontend test",
+          "npm --prefix frontend run build",
+          "npm --prefix frontend run test:e2e",
+          "git grep -n -E \"sk-or-v1-|OPENROUTER_API_KEY=[^<[:space:]#]+\" -- . ':!.env.example'",
+          "git ls-files backend/target frontend/.next frontend/node_modules frontend/playwright-report frontend/test-results .codedungeon/codedungeon.db"
+        ],
+        "risk_notes": [
+          "Treat verification failures as implementation gaps, not as reasons to weaken tests"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "role": "domain_planner",
+  "agent_name": "domain-map",
+  "provider": "codex",
+  "model": "gpt-5",
+  "session_id": "phase-4",
+  "confidence": 0.86,
+  "summary": "The domain plan is actionable without user input. gpt-copy-v7 should be split along stable ownership boundaries: root documentation and environment hygiene, Rust Axum backend foundation, SQLite/sqlx persistence, mockable OpenRouter provider and chat endpoints including streaming, Next.js App Router frontend data layer, ChatGPT-style UI, mocked frontend and Playwright tests, and final verification. The hard domain constraints are that OpenRouter remains server-side, automated tests never call external providers, streaming persistence only commits complete assistant messages, and all environment examples remain placeholder-only.",
+  "verdict": "PASS",
+  "score": 0.86,
+  "questions": [],
+  "proposals": [
+    {
+      "title": "Backend domain foundation",
+      "summary": "Create the Rust 2024 Axum service around explicit modules for config, database, DTOs, provider abstraction, structured errors, routes, tracing, CORS, and server startup. Keep sqlx usage runtime-oriented so the generated repo does not need prepared sqlx metadata.",
+      "files": [
+        "backend/Cargo.toml",
+        "backend/src/main.rs",
+        "backend/src/lib.rs",
+        "backend/src/config.rs",
+        "backend/src/db.rs",
+        "backend/src/models.rs",
+        "backend/src/errors.rs",
+        "backend/src/routes.rs",
+        "backend/migrations/*"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "Provider-safe chat contracts",
+      "summary": "Put all OpenRouter behavior behind a mockable ChatProvider boundary. Non-streaming chat should persist the user message, call the provider outside database transactions, then persist the assistant response only after success. Streaming chat should forward SSE deltas, accumulate assistant text in memory, and persist only after a completed stream.",
+      "files": [
+        "backend/src/provider.rs",
+        "backend/src/routes.rs",
+        "backend/src/errors.rs",
+        "backend/tests/*"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "SQLite conversation model",
+      "summary": "Use conversations and messages tables with UUID text IDs, UTC timestamp text, role checks, conversation cascade delete, and message lookup indexing. Conversation and message APIs should return stable DTOs that the frontend can validate with zod.",
+      "files": [
+        "backend/migrations/*",
+        "backend/src/db.rs",
+        "backend/src/models.rs",
+        "backend/src/routes.rs",
+        "frontend/src/lib/api.ts"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "Frontend application domain",
+      "summary": "Build a direct ChatGPT-style app surface with a responsive conversation sidebar, transcript bubbles, safe assistant markdown rendering, composer loading and validation states, visible error handling, TanStack Query cache ownership, zod response validation, and native fetch SSE consumption.",
+      "files": [
+        "frontend/src/app/*",
+        "frontend/src/components/*",
+        "frontend/src/lib/api.ts",
+        "frontend/src/lib/stream.ts",
+        "frontend/src/hooks/*"
+      ],
+      "owner_role": "frontend"
+    },
+    {
+      "title": "Mock-first verification domain",
+      "summary": "Prove backend and frontend behavior with deterministic local tests. Backend tests should mock provider success and failure states. Frontend tests should mock backend responses. Playwright smoke should mock API and streaming calls and assert the browser never requests OpenRouter.",
+      "files": [
+        "backend/tests/*",
+        "frontend/src/**/*.test.tsx",
+        "frontend/tests/*.spec.ts"
+      ],
+      "owner_role": "qa"
+    },
+    {
+      "title": "Documentation and secret hygiene",
+      "summary": "Keep .env ignored, .env.example placeholder-only, and README commands aligned with the actual backend and frontend scripts. Include final scans for real OpenRouter keys and generated build, test, dependency, and database artifacts.",
+      "files": [
+        "README.md",
+        ".env.example",
+        ".gitignore"
+      ],
+      "owner_role": "docs"
+    }
+  ],
+  "risks": [
+    {
+      "title": "OpenRouter leaks into browser or tests",
+      "impact": "Client-side provider calls or automated live provider calls would violate project rules, expose sensitive configuration, and make verification non-deterministic.",
+      "mitigation": "Assign OpenRouter ownership exclusively to backend provider code, use provider mocks in backend tests, mock backend routes in frontend tests, and add Playwright assertions that no browser request targets OpenRouter.",
+      "severity": "P1"
+    },
+    {
+      "title": "Partial assistant messages are persisted after stream interruption",
+      "impact": "Conversation history could contain incomplete or misleading assistant content after timeout, provider interruption, or client disconnect.",
+      "mitigation": "Accumulate stream deltas outside the database and insert the assistant message only after stream completion; add tests proving interrupted streams emit an error and do not persist partial assistant rows.",
+      "severity": "P1"
+    },
+    {
+      "title": "Backend and frontend schemas drift",
+      "impact": "The UI may silently mishandle validation, provider, malformed response, or SSE errors if backend response shapes and frontend zod schemas diverge.",
+      "mitigation": "Stabilize backend DTO and error contracts before frontend integration, mirror them in zod schemas, and test malformed response handling and app error states.",
+      "severity": "P2"
+    },
+    {
+      "title": "SQLite transaction scope includes provider calls",
+      "impact": "Long provider calls inside database transactions can cause lock contention and brittle streaming behavior.",
+      "mitigation": "Persist user messages before provider calls, release DB work while waiting on OpenRouter, and persist assistant messages only after provider success.",
+      "severity": "P2"
+    },
+    {
+      "title": "Generated artifacts or local secrets become tracked",
+      "impact": "Tracked databases, build outputs, node_modules, test reports, or real OpenRouter keys would block final approval.",
+      "mitigation": "Add root hygiene early and require final git grep and git ls-files checks for secrets and generated artifacts.",
+      "severity": "P1"
+    }
+  ],
+  "claims": [
+    {
+      "kind": "constraint",
+      "title": "OpenRouter remains server-side",
+      "summary": "Only the Rust backend may read OPENROUTER_API_KEY or call OpenRouter; frontend code may only call the backend API."
+    },
+    {
+      "kind": "decision",
+      "title": "Runtime sqlx queries",
+      "summary": "Use runtime sqlx query APIs rather than compile-time macros to avoid requiring a prepared SQLite database in this generated repo."
+    },
+    {
+      "kind": "decision",
+      "title": "Mockable provider boundary",
+      "summary": "The backend provider abstraction must support mocked success, missing configuration, rate limit, timeout, invalid payload, streaming success, and interrupted stream tests."
+    },
+    {
+      "kind": "constraint",
+      "title": "Streaming persistence is all-or-nothing",
+      "summary": "The backend should persist assistant messages from streaming only after provider stream completion and should not persist partial assistant output after interruption."
+    },
+    {
+      "kind": "constraint",
+      "title": "Project rules envelope preserved",
+      "summary": "Plans, tasks, reviews, handoffs, and reports must include PROJECT_RULES_STATUS approved, digest 62b79626958677deaa3fd0d932f147920ee8a93f3de3d5f5fa283023aaf20d6b, and read yes."
+    },
+    {
+      "kind": "risk",
+      "title": "Final completion depends on evidence",
+      "summary": "Completion should not be reported until backend fmt, clippy, and tests; frontend lint, component tests, build, and Playwright smoke; secret and artifact scans; and CodeDungeon review/finalization gates pass."
+    }
+  ],
+  "project_rules": {
+    "status": "approved",
+    "digest": "62b79626958677deaa3fd0d932f147920ee8a93f3de3d5f5fa283023aaf20d6b",
+    "read": "yes"
+  }
+}
