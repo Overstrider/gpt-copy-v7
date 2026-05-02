@@ -1,7 +1,13 @@
-use std::time::Duration;
+use std::{convert::Infallible, sync::Arc, time::Duration};
 
-use axum::{Json, Router, http::StatusCode, routing::post};
-use futures::StreamExt;
+use axum::{
+    Json, Router,
+    body::{Body, Bytes},
+    http::{StatusCode, header},
+    response::Response,
+    routing::post,
+};
+use futures::{StreamExt, stream};
 use gpt_copy_v7_backend::{
     config::OpenRouterConfig,
     provider::{ChatProvider, OpenRouterProvider, ProviderError, ProviderMessage},
@@ -106,4 +112,48 @@ async fn openrouter_provider_parses_successful_completion_and_stream_errors() {
         .unwrap();
     let first = stream.next().await.unwrap().unwrap_err();
     assert!(matches!(first, ProviderError::InvalidResponse(_)));
+}
+
+#[tokio::test]
+async fn openrouter_provider_buffers_utf8_split_across_stream_chunks() {
+    let frame = "data: {\"choices\":[{\"delta\":{\"content\":\"olá\"}}]}\n\n";
+    let bytes = frame.as_bytes();
+    let split_at = bytes
+        .iter()
+        .position(|byte| *byte == 0xc3)
+        .map(|index| index + 1)
+        .unwrap();
+    let chunks = Arc::new(vec![
+        bytes[..split_at].to_vec(),
+        bytes[split_at..].to_vec(),
+        b"data: [DONE]\n\n".to_vec(),
+    ]);
+
+    let stream_url = spawn_fake_provider(Router::new().route(
+        "/chat/completions",
+        post(move || {
+            let chunks = Arc::clone(&chunks);
+            async move {
+                let chunks = (*chunks).clone();
+                let body_stream = stream::iter(
+                    chunks
+                        .into_iter()
+                        .map(|chunk| Ok::<Bytes, Infallible>(Bytes::from(chunk))),
+                );
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "text/event-stream")
+                    .body(Body::from_stream(body_stream))
+                    .unwrap()
+            }
+        }),
+    ))
+    .await;
+
+    let mut stream = OpenRouterProvider::new(provider_config(stream_url))
+        .stream(vec![ProviderMessage::user("hello")])
+        .await
+        .unwrap();
+
+    assert_eq!(stream.next().await.unwrap().unwrap(), "olá");
+    assert!(stream.next().await.is_none());
 }

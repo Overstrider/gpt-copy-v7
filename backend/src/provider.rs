@@ -201,20 +201,20 @@ impl ChatProvider for OpenRouterProvider {
         let mut chunks = response.bytes_stream();
 
         Ok(Box::pin(async_stream::try_stream! {
-            let mut buffer = String::new();
+            let mut buffer = Vec::new();
             let mut done = false;
 
             while let Some(chunk) = chunks.next().await {
                 let chunk = chunk.map_err(Self::map_reqwest_error)?;
-                let text = std::str::from_utf8(&chunk)
-                    .map_err(|error| ProviderError::InvalidResponse(error.to_string()))?;
-                buffer.push_str(text);
+                buffer.extend_from_slice(&chunk);
 
-                while let Some((frame_end, separator_len)) = next_sse_frame(&buffer) {
-                    let frame = buffer[..frame_end].to_owned();
+                while let Some((frame_end, separator_len)) = next_sse_frame_bytes(&buffer) {
+                    let frame = buffer[..frame_end].to_vec();
                     buffer.drain(..frame_end + separator_len);
+                    let frame = std::str::from_utf8(&frame)
+                        .map_err(|error| ProviderError::InvalidResponse(error.to_string()))?;
 
-                    for data in frame_data_lines(&frame) {
+                    for data in frame_data_lines(frame) {
                         if data == "[DONE]" {
                             done = true;
                             break;
@@ -279,8 +279,11 @@ struct OpenRouterStreamDelta {
     content: Option<String>,
 }
 
-fn next_sse_frame(buffer: &str) -> Option<(usize, usize)> {
-    match (buffer.find("\n\n"), buffer.find("\r\n\r\n")) {
+fn next_sse_frame_bytes(buffer: &[u8]) -> Option<(usize, usize)> {
+    let lf = buffer.windows(2).position(|window| window == b"\n\n");
+    let crlf = buffer.windows(4).position(|window| window == b"\r\n\r\n");
+
+    match (lf, crlf) {
         (Some(lf), Some(crlf)) if crlf < lf => Some((crlf, 4)),
         (Some(lf), _) => Some((lf, 2)),
         (None, Some(crlf)) => Some((crlf, 4)),

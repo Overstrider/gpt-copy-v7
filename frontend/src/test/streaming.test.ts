@@ -74,4 +74,26 @@ describe("sendStreamingMessage", () => {
       message: "The provider timed out"
     });
   });
+
+  test("rejects truncated streams without a terminal event", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          streamFrom(['event: assistant_delta\ndata: {"content":"partial"}\n\n']),
+          { status: 200, headers: { "content-type": "text/event-stream" } }
+        )
+      )
+    );
+
+    await expect(
+      sendStreamingMessage({
+        conversationId: "c1",
+        content: "Hello",
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({
+      code: "stream_interrupted"
+    });
+  });
 });

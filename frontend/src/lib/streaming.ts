@@ -131,6 +131,7 @@ export async function sendStreamingMessage({
   const decoder = new TextDecoder();
   let buffer = "";
   let assistantContent = "";
+  let completed = false;
 
   const processBuffer = (final = false) => {
     buffer = buffer.replace(/\r\n/g, "\n");
@@ -145,6 +146,7 @@ export async function sendStreamingMessage({
       const event = parseEventBlock(block);
 
       if (event.data === "[DONE]" || doneEvents.has(event.eventName)) {
+        completed = true;
         continue;
       }
 
@@ -173,6 +175,10 @@ export async function sendStreamingMessage({
   buffer += decoder.decode();
   if (buffer.trim()) {
     processBuffer(true);
+  }
+
+  if (!completed) {
+    throw new AppError("stream_interrupted", "The server ended the stream before completion.");
   }
 
   return assistantContent;
