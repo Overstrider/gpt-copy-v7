@@ -1,0 +1,150 @@
+{
+  "role": "risk_planner",
+  "agent_name": "risk-planner",
+  "provider": "codex",
+  "model": "gpt-5",
+  "session_id": "phase-4-round-1",
+  "confidence": 0.84,
+  "summary": "Risk plan prioritizes server-only OpenRouter proxying, mocked provider failure coverage, streaming persistence semantics, backend/frontend schema alignment, and final secret/generated artifact gates. No material ambiguity blocks implementation planning.",
+  "verdict": "PASS",
+  "score": 0.0,
+  "questions": [],
+  "proposals": [
+    {
+      "title": "Lock server-side provider boundary first",
+      "summary": "Implement OpenRouter access only inside backend provider modules with a mockable trait, explicit error mapping, timeout handling, and no frontend exposure of provider URLs or keys.",
+      "files": [
+        "backend/src/config.rs",
+        "backend/src/provider.rs",
+        "backend/src/errors.rs",
+        "backend/src/routes/messages.rs",
+        "backend/tests/provider_failures.rs",
+        ".env.example"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "Prove streaming persistence semantics with tests",
+      "summary": "Cover successful SSE delta forwarding and interrupted-stream behavior before wiring the frontend, ensuring incomplete assistant messages are never persisted.",
+      "files": [
+        "backend/src/provider.rs",
+        "backend/src/routes/messages.rs",
+        "backend/tests/streaming.rs",
+        "frontend/src/lib/stream.ts",
+        "frontend/src/lib/api.ts"
+      ],
+      "owner_role": "backend"
+    },
+    {
+      "title": "Keep frontend contracts validated at the API edge",
+      "summary": "Centralize zod schemas for backend response parsing and treat malformed JSON or malformed SSE events as visible app errors instead of silent UI corruption.",
+      "files": [
+        "frontend/src/lib/schemas.ts",
+        "frontend/src/lib/api.ts",
+        "frontend/src/lib/stream.ts",
+        "frontend/src/components/ChatShell.tsx",
+        "frontend/src/components/ErrorBanner.tsx"
+      ],
+      "owner_role": "frontend"
+    },
+    {
+      "title": "Mock all networked test paths",
+      "summary": "Use backend provider mocks and Playwright route interception so automated tests never consume OpenRouter quota or require local secrets.",
+      "files": [
+        "backend/tests/",
+        "frontend/tests/",
+        "frontend/e2e/",
+        ".codedungeon/plans/phase-35-qa.md"
+      ],
+      "owner_role": "qa"
+    },
+    {
+      "title": "Add a final hygiene gate",
+      "summary": "Verify placeholder-only env examples, ignored local env files, no tracked databases or build output, and no OpenRouter key patterns before final reporting.",
+      "files": [
+        ".gitignore",
+        ".env.example",
+        "README.md",
+        ".codedungeon/project-rules.compact.md"
+      ],
+      "owner_role": "qa"
+    }
+  ],
+  "risks": [
+    {
+      "title": "Provider key or OpenRouter endpoint leaks into frontend",
+      "impact": "A browser-visible key or direct provider call would violate the server-side proxy requirement and expose local secrets.",
+      "mitigation": "Keep only NEXT_PUBLIC_API_BASE_URL in frontend, grep tracked files for OpenRouter key patterns, and add Playwright assertions that no browser request targets OpenRouter.",
+      "severity": "P1"
+    },
+    {
+      "title": "Streaming failure persists partial assistant output",
+      "impact": "Interrupted streams could leave misleading or corrupt assistant messages in SQLite while the UI reports an error.",
+      "mitigation": "Accumulate assistant text outside persistence, insert assistant only after stream completion, and test interrupted stream paths with a mock provider.",
+      "severity": "P1"
+    },
+    {
+      "title": "Automated tests call real OpenRouter",
+      "impact": "Tests would be flaky, require secrets, consume quota, and violate the project rule forbidding external provider calls from automated tests.",
+      "mitigation": "Use dependency-injected provider mocks in Rust tests and Playwright network interception for frontend smoke coverage.",
+      "severity": "P1"
+    },
+    {
+      "title": "Backend and frontend response contracts drift",
+      "impact": "The UI may break on valid backend errors or silently accept malformed data, especially around SSE events and structured JSON errors.",
+      "mitigation": "Define DTOs clearly in backend tests, mirror response expectations in frontend zod schemas, and include malformed response tests.",
+      "severity": "P2"
+    },
+    {
+      "title": "SQLite usage blocks provider calls or races updates",
+      "impact": "Holding transactions while waiting on provider responses can lock local SQLite state and cause poor behavior under concurrent requests.",
+      "mitigation": "Persist user message, release DB work before provider call, then persist assistant after provider success; test conversation updated_at ordering.",
+      "severity": "P2"
+    },
+    {
+      "title": "Markdown rendering introduces unsafe raw HTML behavior",
+      "impact": "Assistant content could render executable or misleading markup in the browser.",
+      "mitigation": "Use react-markdown without rehype-raw, add tests for raw script or HTML content, and render code/GFM through safe components only.",
+      "severity": "P2"
+    },
+    {
+      "title": "CORS is either too open or breaks local frontend development",
+      "impact": "Overly broad CORS weakens the proxy boundary, while overly narrow CORS prevents the Next.js app from calling the backend.",
+      "mitigation": "Make frontend origin configurable, default to the documented local origin, and test allowed origin behavior.",
+      "severity": "P2"
+    },
+    {
+      "title": "Generated artifacts are accidentally tracked",
+      "impact": "SQLite databases, build outputs, node_modules, or Playwright reports could pollute the repository and final PR.",
+      "mitigation": "Update .gitignore early and run git ls-files checks for backend/target, frontend/.next, frontend/node_modules, Playwright reports, and .codedungeon/codedungeon.db.",
+      "severity": "P2"
+    }
+  ],
+  "claims": [
+    {
+      "kind": "constraint",
+      "title": "OpenRouter remains backend-only",
+      "summary": "All provider calls, keys, model defaults, timeouts, and provider error mapping belong in backend modules and must be mocked in tests."
+    },
+    {
+      "kind": "decision",
+      "title": "Mocked failure coverage is mandatory",
+      "summary": "Provider 429, timeout, invalid response, missing configuration, streaming success, and interrupted stream paths should be verified without external network calls."
+    },
+    {
+      "kind": "risk",
+      "title": "Streaming is the highest integration risk",
+      "summary": "SSE framing, client parsing, provider interruption, and persistence-on-completion semantics cross backend, frontend, and QA ownership."
+    },
+    {
+      "kind": "constraint",
+      "title": "Final reporting depends on verification evidence",
+      "summary": "Completion claims must wait for backend checks, frontend checks, Playwright smoke, secret scan, generated artifact scan, and CodeDungeon review/finalization gates."
+    }
+  ],
+  "project_rules": {
+    "status": "approved",
+    "digest": "62b79626958677deaa3fd0d932f147920ee8a93f3de3d5f5fa283023aaf20d6b",
+    "read": "yes"
+  }
+}

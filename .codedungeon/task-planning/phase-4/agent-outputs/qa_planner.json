@@ -1,0 +1,116 @@
+{
+  "role": "qa_planner",
+  "agent_name": "qa-contracts",
+  "provider": "codex",
+  "model": "gpt-5",
+  "session_id": "phase-4",
+  "confidence": 0.87,
+  "summary": "QA planning for gpt-copy-v7 should gate implementation with mocked backend provider tests, frontend schema and component tests, a mocked streaming Playwright smoke path, full backend/frontend command verification, and secret plus generated-artifact hygiene checks. The supplied architecture, domain, QA trap, and approved project rules are sufficient for planning without user input.",
+  "verdict": "PASS",
+  "score": 0.86,
+  "questions": [],
+  "proposals": [
+    {
+      "title": "Backend contract and provider failure coverage",
+      "summary": "Require Rust tests for health without OpenRouter credentials, OPENROUTER_MODEL defaulting, SQLite migrations, conversation and message persistence, validation failures, structured JSON errors, CORS, mocked non-streaming success, mocked provider_not_configured, provider_rate_limited, provider_timeout, provider_invalid_response, streaming success, and interrupted stream behavior. Provider tests must use injected mocks and must never call OpenRouter.",
+      "files": [
+        "backend/Cargo.toml",
+        "backend/migrations/",
+        "backend/src/config.rs",
+        "backend/src/db.rs",
+        "backend/src/errors.rs",
+        "backend/src/provider.rs",
+        "backend/src/routes/",
+        "backend/tests/"
+      ],
+      "owner_role": "qa"
+    },
+    {
+      "title": "Frontend validation and ChatGPT-style workflow coverage",
+      "summary": "Require frontend tests for composer validation and disabled states, sidebar create/select/mobile drawer behavior, transcript markdown and GFM rendering, unsafe HTML/script non-execution, zod rejection of malformed backend responses, visible error state handling, and TanStack Query cache updates after send flows.",
+      "files": [
+        "frontend/src/app/",
+        "frontend/src/components/",
+        "frontend/src/lib/api.ts",
+        "frontend/src/lib/streaming.ts",
+        "frontend/src/**/*.test.tsx"
+      ],
+      "owner_role": "qa"
+    },
+    {
+      "title": "Mocked Playwright streaming smoke",
+      "summary": "Require one end-to-end smoke test that mocks backend conversation, message, and SSE endpoints, sends a user message through the UI, consumes mocked streaming deltas, displays the assistant response, checks basic desktop/mobile layout behavior, and asserts no browser request targets OpenRouter.",
+      "files": [
+        "frontend/playwright.config.ts",
+        "frontend/e2e/",
+        "frontend/package.json"
+      ],
+      "owner_role": "qa"
+    },
+    {
+      "title": "Final verification and repository hygiene gate",
+      "summary": "Before CodeDungeon finalization, run backend fmt, clippy, and tests; frontend lint, tests, build, and Playwright smoke; then scan tracked files for OpenRouter secrets and generated artifacts. Completion evidence should only pass when all commands and scans pass or an environment prerequisite is explicitly documented as blocking.",
+      "files": [
+        "README.md",
+        ".env.example",
+        ".gitignore",
+        ".codedungeon/plans/phase-35-qa.md"
+      ],
+      "owner_role": "qa"
+    }
+  ],
+  "risks": [
+    {
+      "title": "Streaming failure can persist partial assistant output",
+      "impact": "If the backend writes assistant content before the provider stream completes, SQLite can contain incomplete responses while the UI reports an error.",
+      "mitigation": "Use mocked interrupted-stream tests that assert SSE error signaling and query persistence to confirm no partial assistant message is stored.",
+      "severity": "P1"
+    },
+    {
+      "title": "OpenRouter key or calls can leak outside the backend",
+      "impact": "Client-side OpenRouter requests, tracked keys, or live-provider tests would violate approved project rules and make local verification dependent on quota and secrets.",
+      "mitigation": "Keep provider access behind the backend abstraction, mock all automated provider tests, assert Playwright makes no OpenRouter requests, and run a tracked-file secret scan excluding placeholder-only .env.example.",
+      "severity": "P1"
+    },
+    {
+      "title": "Provider error mapping can drift from the domain contract",
+      "impact": "Incorrect status codes for missing configuration, rate limits, timeouts, or invalid payloads would break predictable frontend error handling.",
+      "mitigation": "Add backend tests that exercise each provider failure variant and assert exact HTTP status plus error.code values.",
+      "severity": "P1"
+    },
+    {
+      "title": "Generated artifacts can be committed",
+      "impact": "Tracked SQLite databases, Rust build output, Next build output, node_modules, or Playwright reports can pollute the PR and harm reproducibility.",
+      "mitigation": "Keep generated paths ignored and run git ls-files checks for backend/target, frontend/.next, frontend/node_modules, frontend/playwright-report, frontend/test-results, and .codedungeon/codedungeon.db.",
+      "severity": "P2"
+    },
+    {
+      "title": "Local toolchain gaps can block final evidence",
+      "impact": "Rust 2024 support, npm install state, or Playwright browser availability can prevent full local verification even when implementation is correct.",
+      "mitigation": "Run the command matrix early, distinguish product failures from environment prerequisites, and record any unrecoverable prerequisite blocker in CodeDungeon evidence.",
+      "severity": "P2"
+    }
+  ],
+  "claims": [
+    {
+      "kind": "decision",
+      "title": "Provider behavior must be verified with mocks",
+      "summary": "Automated tests should reject any dependency on OpenRouter credentials, quota, network availability, or live provider responses unless the user explicitly changes the requirement."
+    },
+    {
+      "kind": "constraint",
+      "title": "Final acceptance includes command and hygiene gates",
+      "summary": "Backend fmt, clippy, tests, frontend lint, tests, build, Playwright smoke, secret scanning, and generated-artifact scanning are all required before reporting completion."
+    },
+    {
+      "kind": "risk",
+      "title": "Streaming and error contracts carry the highest QA risk",
+      "summary": "Rate limit, timeout, invalid response, missing configuration, streaming completion, and interrupted streaming semantics need exact tests because they span provider abstraction, persistence, SSE behavior, and UI error handling."
+    }
+  ],
+  "project_rules": {
+    "status": "approved",
+    "digest": "62b79626958677deaa3fd0d932f147920ee8a93f3de3d5f5fa283023aaf20d6b",
+    "read": "yes"
+  }
+}
